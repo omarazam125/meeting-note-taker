@@ -69,11 +69,17 @@ export default function RecordPage() {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const poolIndex = useRef(0)
+  const secondsRef = useRef(0)
 
   // Timer
   useEffect(() => {
     if (phase !== 'live' || paused) return
-    const id = setInterval(() => setSeconds((s) => s + 1), 1000)
+    const id = setInterval(() => {
+      setSeconds((s) => {
+        secondsRef.current = s + 1
+        return s + 1
+      })
+    }, 1000)
     return () => clearInterval(id)
   }, [phase, paused])
 
@@ -88,12 +94,12 @@ export default function RecordPage() {
         {
           ...next,
           id: `${next.id}-${prev.length}`,
-          t: seconds,
+          t: secondsRef.current,
         },
       ])
     }, 2600)
     return () => clearInterval(id)
-  }, [phase, paused, seconds])
+  }, [phase, paused])
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -105,6 +111,7 @@ export default function RecordPage() {
   function start() {
     setPhase('live')
     setSeconds(0)
+    secondsRef.current = 0
     setLines([])
     poolIndex.current = 0
   }
