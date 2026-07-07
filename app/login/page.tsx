@@ -1,26 +1,84 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, type FormEvent } from 'react'
-import { Mic, Waves, ListChecks, Loader2 } from 'lucide-react'
+import { Mic, Waves, ListChecks, Loader2, CheckCircle2 } from 'lucide-react'
 import { useLang } from '@/lib/i18n'
+import { createClient } from '@/lib/supabase/client'
 import { Logo } from '@/components/logo'
 import { LanguageToggle, ThemeToggle } from '@/components/controls'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+type Mode = 'signin' | 'signup'
+
 export default function LoginPage() {
   const { t, lang } = useLang()
   const router = useRouter()
+  const [mode, setMode] = useState<Mode>('signin')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
-  function onSubmit(e: FormEvent) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+
+  function switchMode(next: Mode) {
+    setMode(next)
+    setError(null)
+    setSuccess(null)
+  }
+
+  async function onSubmit(e: FormEvent) {
     e.preventDefault()
+    setError(null)
+    setSuccess(null)
+    const supabase = createClient()
+
+    if (mode === 'signup' && password !== confirm) {
+      setError(t('passwordsNoMatch'))
+      return
+    }
+
     setLoading(true)
-    // Front-end only: simulate auth then go to the app.
-    setTimeout(() => router.push('/record'), 700)
+    try {
+      if (mode === 'signin') {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+        if (error) {
+          setError(t('authInvalidCreds'))
+          return
+        }
+        router.push('/record')
+        router.refresh()
+      } else {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo:
+              process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
+              `${window.location.origin}/auth/callback`,
+            data: { full_name: name },
+          },
+        })
+        if (error) {
+          setError(error.message || t('authGenericError'))
+          return
+        }
+        setSuccess(t('signupSuccess'))
+        setMode('signin')
+      }
+    } catch {
+      setError(t('authGenericError'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   const features = [
@@ -100,19 +158,48 @@ export default function LoginPage() {
 
         <div className="flex flex-1 items-center justify-center px-6 pb-16">
           <div className="w-full max-w-sm">
-            <h2 className="text-2xl font-bold">{t('loginTitle')}</h2>
+            <h2 className="text-2xl font-bold">
+              {mode === 'signin' ? t('loginTitle') : t('signupTitle')}
+            </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              {t('loginSubtitle')}
+              {mode === 'signin' ? t('loginSubtitle') : t('signupSubtitle')}
             </p>
 
+            {success && (
+              <div className="mt-6 flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm text-foreground">
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                <span>{success}</span>
+              </div>
+            )}
+            {error && (
+              <div className="mt-6 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
             <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-4">
+              {mode === 'signup' && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="name">{t('signupName')}</Label>
+                  <Input
+                    id="name"
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder={t('signupNamePh')}
+                    autoComplete="name"
+                  />
+                </div>
+              )}
               <div className="flex flex-col gap-2">
                 <Label htmlFor="email">{t('email')}</Label>
                 <Input
                   id="email"
                   type="email"
                   required
-                  defaultValue="layla@shaffra.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder={t('loginEmailPh')}
                   autoComplete="email"
                 />
@@ -120,37 +207,74 @@ export default function LoginPage() {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="password">{t('password')}</Label>
-                  <button
-                    type="button"
-                    className="text-xs font-medium text-primary hover:underline"
-                  >
-                    {t('loginForgot')}
-                  </button>
+                  {mode === 'signin' && (
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {t('loginForgot')}
+                    </button>
+                  )}
                 </div>
                 <Input
                   id="password"
                   type="password"
                   required
-                  defaultValue="password"
+                  minLength={6}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder={t('loginPasswordPh')}
-                  autoComplete="current-password"
+                  autoComplete={
+                    mode === 'signin' ? 'current-password' : 'new-password'
+                  }
                 />
               </div>
+              {mode === 'signup' && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="confirm">{t('confirmPassword')}</Label>
+                  <Input
+                    id="confirm"
+                    type="password"
+                    required
+                    minLength={6}
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    placeholder={t('loginPasswordPh')}
+                    autoComplete="new-password"
+                  />
+                </div>
+              )}
 
               <Button type="submit" className="mt-2 w-full" disabled={loading}>
                 {loading && <Loader2 className="size-4 animate-spin" />}
-                {t('loginCta')}
+                {mode === 'signin' ? t('loginCta') : t('signupCta')}
               </Button>
             </form>
 
             <p className="mt-6 text-center text-sm text-muted-foreground">
-              {t('loginNoAccount')}{' '}
-              <Link
-                href="/record"
-                className="font-medium text-primary hover:underline"
-              >
-                {t('loginCreate')}
-              </Link>
+              {mode === 'signin' ? (
+                <>
+                  {t('loginNoAccount')}{' '}
+                  <button
+                    type="button"
+                    onClick={() => switchMode('signup')}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {t('loginCreate')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  {t('signupHaveAccount')}{' '}
+                  <button
+                    type="button"
+                    onClick={() => switchMode('signin')}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {t('signupSignIn')}
+                  </button>
+                </>
+              )}
             </p>
           </div>
         </div>
